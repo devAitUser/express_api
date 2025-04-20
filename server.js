@@ -1,60 +1,66 @@
-// server.js
 const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
-const bodyParser = require('body-parser');
-const app = express(); // J'ai changé appx en app pour être cohérent
-const PORT = process.env.PORT || 5000;
+
+const app = express();
+const PORT = 3000;
 
 // Middleware
+app.use(express.json());
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
 
+// Connexion à la base SQLite
+const db = new sqlite3.Database('./database.db');
 
-app.use(cors({
-    origin: '*' // Autorise toutes les origines
- }));
+// Création de la table si elle n'existe pas
+db.run(`CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL
+)`);
 
-// Données mock pour l'exemple
-let tasks = [
-    { id: 1, title: 'Apprendre Express', completed: false },
-    { id: 2, title: 'Créer une API REST', completed: false }
-];
-
-// Routes de base
-app.get('/', (req, res) => {
-    res.json({ message: 'API opérationnelle' });
+// GET - récupérer tous les items
+app.get('/items', (req, res) => {
+    db.all('SELECT * FROM items', [], (err, rows) => {
+        if (err) {
+            console.error(err);
+            res.status(500).send("Erreur lors de la récupération");
+        } else {
+            res.json(rows);
+        }
+    });
 });
 
-// Route pour récupérer toutes les tâches
-app.get('/api/tasks', (req, res) => {
-    res.json(tasks);
+// POST - ajouter un nouvel item
+app.post('/items', (req, res) => {
+    const { title } = req.body;
+    if (!title) return res.status(400).send("Champ 'title' requis");
+
+    db.run('INSERT INTO items (title) VALUES (?)', [title], function(err) {
+        if (err) {
+            console.error(err);
+            res.status(500).send("Erreur lors de l'ajout");
+        } else {
+            res.status(201).json({ id: this.lastID, title });
+        }
+    });
 });
 
-// Route pour récupérer une tâche spécifique
-app.get('/api/tasks/:id', (req, res) => {
-    const task = tasks.find(t => t.id === parseInt(req.params.id));
-    if (!task) return res.status(404).json({ error: 'Tâche non trouvée' });
-    res.json(task);
+// DELETE - supprimer un item par ID
+app.delete('/items/:id', (req, res) => {
+    const { id } = req.params;
+
+    db.run('DELETE FROM items WHERE id = ?', [id], function(err) {
+        if (err) {
+            console.error(err);
+            res.status(500).send("Erreur lors de la suppression");
+        } else if (this.changes === 0) {
+            res.status(404).send("Item non trouvé");
+        } else {
+            res.status(200).send("Item supprimé");
+        }
+    });
 });
 
-// Route pour créer une nouvelle tâche
-app.post('/api/tasks', (req, res) => {
-    const newTask = {
-        id: tasks.length + 1,
-        title: req.body.title,
-        completed: false
-    };
-    tasks.push(newTask);
-    res.status(201).json(newTask);
-});
-
-// Gestion des erreurs
-app.use((err, req, res, next) => {
-    res.status(500).json({ message: err.message });
-});
-
-// Démarrage du serveur
 app.listen(PORT, () => {
-    console.log(`Serveur en écoute sur le port ${PORT}`);
+    console.log(`Serveur Express lancé sur http://localhost:${PORT}`);
 });
